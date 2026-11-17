@@ -1,0 +1,68 @@
+name: Build LOUI EXT (Android ARM64)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'app/**'
+      - '.github/workflows/build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Android command-line SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        shell: bash
+        run: |
+          sdkmanager --install 'ndk;27.2.12479018'
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Check source and prebuilt libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          JNI=app/src/main/jni
+          test -f "$JNI/Android.mk"
+          test -f "$JNI/Application.mk"
+          test -s "$JNI/src/curl/curl-android-arm64-v8a/lib/libcurl.a"
+          test -s "$JNI/src/curl/openssl-android-arm64-v8a/lib/libssl.a"
+          test -s "$JNI/src/curl/openssl-android-arm64-v8a/lib/libcrypto.a"
+          echo 'Source and prebuilt archives found.'
+
+      - name: Build Android ARM64 executable
+        shell: bash
+        working-directory: app/src/main
+        run: |
+          set -euo pipefail
+          "$ANDROID_NDK_HOME/ndk-build" \
+            NDK_PROJECT_PATH=. \
+            APP_BUILD_SCRIPT=jni/Android.mk \
+            NDK_APPLICATION_MK=jni/Application.mk \
+            -j2 V=0
+
+      - name: Show build outputs
+        if: success()
+        shell: bash
+        run: |
+          find app/src/main/libs app/src/main/obj/local -maxdepth 3 -type f -print 2>/dev/null || true
+
+      - name: Upload compiled output
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LOUI-EXT-arm64-v8a
+          path: |
+            app/src/main/libs/arm64-v8a/**
+          if-no-files-found: error
+          retention-days: 14
